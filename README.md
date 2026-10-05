@@ -1,99 +1,37 @@
 # PyMeasure
 
-A desktop GUI for making precise measurements on images and PDFs — set a real-world scale, annotate with
-labelled objects, and measure distances, angles, polygon area/perimeter, and polyline lengths.
+## Overview
+*PyMeasure is a desktop application for taking scaled measurements from images and PDF drawings. Set a real-world scale, then measure and annotate distances, angles, areas and risk contours directly on the drawing.*
 
 ## Features
-- Interactive GUI built with PySide6
-- Open PNG, JPEG, BMP, TIFF images and multi-page PDFs
-- Set coordinate origin and scale (by known distance or known point coordinates)
-- Add labelled points, lines, angles, polygons, polylines, ellipses, and text boxes
-- Draw **risk contours** around a polyline or point: each contour defines up to 20
-  levels (reference value, distance, color) and renders smooth rounded boundaries
+- Opens PNG, JPEG, BMP and TIFF images and multi-page PDFs, each in its own tab
+- Coordinate origin and scale set by a known distance or known point coordinates
+- Labelled points, lines, angles, polygons (area and perimeter), polylines, ellipses and text boxes
+- Risk contours around a polyline or point, with up to 20 levels of reference, distance and colour
+- Contours with the same reference merge into one outer boundary
+- Undo and redo, cut, copy and paste, and keyboard shortcuts for every tool
+- Sessions saved and loaded as JSON
+- Measurement export to CSV, JSON or the clipboard, and view export to PNG or JPEG
 
-## Installation
-
+## Install
 ```bash
 git clone https://github.com/faiqraedaya/PyMeasure
 cd PyMeasure
 uv sync
 ```
 
-## Quick start
-
+## Usage
 ```bash
 uv run main.py
 ```
+Open a drawing with Ctrl+O, press S and click two points of known length to set the scale. Press L to measure a line, or A to draw a polygon and read its area. Press Ctrl+E to export the measurements, or Ctrl+S to save the session.
 
-## Keyboard shortcuts
+## Technical details
+Inputs are raster images or PDFs. PDF pages are rendered with PyMuPDF at 150 dpi by default. Measurements are taken in image pixels and converted to world units through the scale (pixel distance to real distance, with a unit) and origin.
 
-| Key         | Tool / Action                                    |
-|-------------|--------------------------------------------------|
-| `Space`     | Pan / Zoom                                       |
-| `Z`         | Zoom Rectangle                                   |
-| `O`         | Set Origin                                       |
-| `S`         | Scale by Distance                                |
-| `C`         | Scale by Coordinates                             |
-| `T`         | Add Point                                        |
-| `L`         | Add Line                                         |
-| `G`         | Add Angle (middle click = vertex)                |
-| `A`         | Add Polygon (double-click or right-click to close) |
-| `N`         | Add Polyline (double-click or right-click to finish) |
-| `E`         | Add Ellipse (2 corners; hold Shift for a circle) |
-| `B`         | Add Text Box (2 corners, then enter text/style)  |
-| `K`         | Add Polyline Contour (finish, then define levels) |
-| `P`         | Add Point Contour (click, then define levels)    |
-| `Ctrl+L`    | Toggle text labels                               |
-| `Escape`    | Cancel current operation                         |
-| `Ctrl+Z`    | Undo                                             |
-| `Ctrl+Y`    | Redo                                             |
-| `Ctrl+N`    | New (unload current drawing)                     |
-| `Ctrl+O`    | Open file                                        |
-| `Ctrl+S`    | Save session                                     |
-| `Ctrl+Shift+O` | Load session                                  |
-| `Ctrl+E`    | Export data                                      |
-| `Ctrl+Shift+E` | Export view as image                          |
-| `Ctrl+0`    | Fit to window                                    |
-| `Ctrl+=`    | Zoom in                                          |
-| `Ctrl+-`    | Zoom out                                         |
-| `Ctrl+A`    | Select all                                       |
-| `Ctrl+X`    | Cut selection                                    |
-| `Ctrl+C`    | Copy selection                                   |
-| `Ctrl+V`    | Paste                                            |
-| `Del`       | Delete selected                                  |
+Risk contours are built with Shapely. Each level buffers the polyline or point by its distance in pixels with round caps and joins. Levels that share a reference are merged with unary_union, so overlapping contours from different objects form a single boundary.
 
-## Session file format
+A session is a JSON file holding the scale, the origin, an optional legend title and a list of objects. Each object records its kind (point, distance, angle, polygon, polyline, ellipse, textbox, polyline_contour or point_contour), name, image points, value, unit, timestamp and style. Text boxes also store text and font settings, and contours store their levels. Legacy "area" objects load as polygons. The data export writes one row per object with type, name, value, unit, measurements, timestamp, levels, world points and image points.
 
-Sessions are saved as JSON:
-
-```json
-{
-  "scale_info": { "pixel_distance": 1.0, "real_distance": 1.0, "unit": "m" },
-  "origin":     { "x": 0.0, "y": 0.0, "label": "" },
-  "objects": [
-    {
-      "kind": "distance",
-      "name": "Wall",
-      "points": [[100.0, 200.0], [400.0, 200.0]],
-      "unit": "m",
-      "value": 3.0,
-      "timestamp": "14:22:01"
-    }
-  ]
-}
-```
-
-`kind` is one of `"point"`, `"distance"`, `"angle"`, `"polygon"`, `"polyline"`,
-`"ellipse"`, `"textbox"`, `"polyline_contour"`, or `"point_contour"` (the legacy
-`"area"` is loaded as `"polygon"`). Objects may also carry a `"color"` (hex line
-color), `"line_width"`, `"line_style"` (`solid`/`dashed`/`dotted`/`dashdot`), and a
-`"measures"` map of named secondary measurements (e.g. area + perimeter). Text
-boxes add `"text"`, `"font_family"`, `"font_size"`, `"font_color"`, `"fill_color"`,
-`"bold"`, `"italic"`, `"underline"`, `"h_align"` (`left`/`center`/`right`), and
-`"v_align"` (`top`/`middle`/`bottom`); contours add a `"levels"` list of
-`{ "reference": str, "distance": float, "color": "#rrggbb" }`. The session may
-include a `"legend_title"` string.
-
-## LICENSE
-
-[MIT](LICENSE)
+## License
+MIT — see [LICENSE](LICENSE).
