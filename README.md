@@ -1,3 +1,5 @@
+<img src="src/vellum/gui/vellum.svg" alt="Vellum icon" width="64">
+
 # Vellum
 
 ## Overview
