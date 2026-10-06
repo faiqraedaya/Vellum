@@ -1,4 +1,5 @@
 import math
+import uuid
 from datetime import datetime
 from dataclasses import dataclass, field
 
@@ -76,6 +77,13 @@ class DiagramObject:
     # Secondary measurements keyed by name (e.g. {"area": .., "perimeter": ..});
     # `value`/`unit` hold the primary one for backward compatibility.
     measures: dict = field(default_factory=dict)
+    # Stable identity, written as the PDF annotation's /NM so an exported
+    # markup can be matched back to its object after editing elsewhere.
+    uid: str = field(default_factory=lambda: uuid.uuid4().hex)
+
+    def renew_uid(self) -> None:
+        """Give a copied object an identity of its own."""
+        self.uid = uuid.uuid4().hex
 
     @property
     def is_contour(self) -> bool:
@@ -183,6 +191,7 @@ class DiagramObject:
             "h_align": self.h_align,
             "v_align": self.v_align,
             "measures": self.measures,
+            "uid": self.uid,
         }
 
     @classmethod
@@ -212,4 +221,5 @@ class DiagramObject:
             h_align=d.get("h_align", "left"),
             v_align=d.get("v_align", "top"),
             measures=d.get("measures", {}),
+            uid=d.get("uid") or uuid.uuid4().hex,
         )

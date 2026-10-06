@@ -16,7 +16,7 @@ Usage:
     Tokens.RADIUS                           # border radius in px
 
 Run standalone to print the contrast ladder and verify WCAG ratios:
-    python -m pymeasure.gui.theme
+    python -m vellum.gui.theme
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def _fonts_dir() -> Path:
         return beside_module
     bundle_root = getattr(sys, "_MEIPASS", None)
     if bundle_root:
-        return Path(bundle_root) / "pymeasure" / "gui" / "fonts"
+        return Path(bundle_root) / "vellum" / "gui" / "fonts"
     return beside_module
 
 
@@ -362,7 +362,7 @@ def _arrow_assets() -> dict:
     """
     from . import icons          # imported here: icons imports this module
 
-    directory = Path(tempfile.gettempdir()) / "pymeasure-theme"
+    directory = Path(tempfile.gettempdir()) / "vellum-theme"
     try:
         directory.mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -945,6 +945,28 @@ QToolButton:disabled {{
 QToolButton:focus {{
     border: 2px solid {T.ink(T.INK_GLYPH)};
     padding: 4px;
+}}
+/* Home-page card: one way to start, as an outlined tile. The outline is
+   what makes the three read as equal choices rather than a toolbar. */
+QToolButton[variant="card"] {{
+    background: {T.CANVAS};
+    border: 1px solid {T.ink(T.SURFACE_BORDER)};
+    border-radius: {T.RADIUS_PANEL}px;
+    padding: {T.MARGIN_GROUP}px;
+    font-size: {T.FONT_LABEL}px;
+    font-weight: {T.WEIGHT_MEDIUM};
+    color: {T.ink(T.INK_PRIMARY)};
+}}
+QToolButton[variant="card"]:hover {{
+    background: {T.ink(T.SURFACE_HOVER)};
+    border-color: {T.ink(T.SURFACE_BORDER_STRONG)};
+}}
+QToolButton[variant="card"]:pressed {{
+    background: {T.ink(T.SURFACE_PRESSED)};
+}}
+QToolButton[variant="card"]:focus {{
+    border: 2px solid {T.ink(T.INK_GLYPH)};
+    padding: {T.MARGIN_GROUP - 1}px;
 }}
 /* Toolbar groups are separated by a rule, not by a gap alone: the tool
    palette is long enough that the eye needs the break to find a group. */

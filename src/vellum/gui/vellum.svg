@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Tile -->
+  <rect width="64" height="64" rx="14" fill="#2563EB"/>
+  <!-- The vellum sheet, slightly translucent, with a folded corner -->
+  <path d="M19 10H39L48 19V51a3 3 0 0 1-3 3H19a3 3 0 0 1-3-3V13a3 3 0 0 1 3-3Z"
+        fill="#FFFFFF" fill-opacity="0.94"/>
+  <path d="M39 10V16a3 3 0 0 0 3 3H48Z" fill="#BFDBFE"/>
+  <!-- A "V" drawn as an angle measurement: two arms, their end points,
+       and the arc that marks the angle at the vertex -->
+  <path d="M26.63 33.27A12 12 0 0 1 37.37 33.27" fill="none" stroke="#2563EB"
+        stroke-width="2" stroke-linecap="round" stroke-opacity="0.55"/>
+  <path d="M22 24 32 44 42 24" fill="none" stroke="#2563EB" stroke-width="3.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="22" cy="24" r="3" fill="#2563EB"/>
+  <circle cx="42" cy="24" r="3" fill="#2563EB"/>
+</svg>

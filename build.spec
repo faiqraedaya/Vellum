@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# Directory-bundle build for PyMeasure.
+# Directory-bundle build for Vellum.
 # App imports: PySide6 (QtCore/QtGui/QtWidgets/QtSvg), PyMuPDF (fitz), and
 # Shapely (risk-contour geometry; pulls in numpy + the GEOS native libs).
 # Stdlib only otherwise. PyInstaller's built-in PySide6/pymupdf/numpy hooks and
@@ -133,7 +133,8 @@ a = Analysis(
     binaries=[],
     # The typeface is part of the design system, so it ships with the app
     # rather than being assumed present on the host.
-    datas=[('src/pymeasure/gui/fonts', 'pymeasure/gui/fonts')],
+    datas=[('src/vellum/gui/fonts', 'vellum/gui/fonts'),
+           ('src/vellum/gui/vellum.svg', 'vellum/gui')],
     hiddenimports=['PySide6.QtSvg'],
     hookspath=[],
     hooksconfig={},
@@ -153,7 +154,8 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='PyMeasure',
+    name='Vellum',
+    icon='src/vellum/gui/vellum.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,
@@ -174,5 +176,5 @@ coll = COLLECT(
     strip=True,
     upx=True,
     upx_exclude=UPX_EXCLUDE,
-    name='PyMeasure',
+    name='Vellum',
 )

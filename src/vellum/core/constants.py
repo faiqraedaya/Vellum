@@ -72,3 +72,19 @@ TOOL_HELP = {
     Tool.ADD_POLYLINE_CONTOUR: "Add polyline contour — click vertices · double-click to finish · then define contour levels",
     Tool.ADD_POINT_CONTOUR:    "Add point contour — click a point · then define contour levels",
 }
+
+# Mouse and keyboard gestures on the canvas that have no menu entry, for the
+# Commands window. (Command, shortcut or gesture.)
+CANVAS_GESTURES = (
+    ("Pan", "Middle-drag, or drag with Pan / zoom"),
+    ("Zoom in or out", "Scroll wheel"),
+    ("Finish a polygon or polyline", "Double-click or right-click"),
+    ("Lock to horizontal or vertical", "Hold Shift while placing"),
+    ("Draw a circle", "Hold Shift with Add ellipse"),
+    ("Add to the selection", "Ctrl+click or Ctrl+drag"),
+    ("Move a vertex", "Drag its handle on a selected object"),
+    ("Delete a vertex", "Right-click the vertex"),
+    ("Insert a vertex", "Right-click an edge"),
+    ("Edit an object", "Double-click it in the objects list"),
+    ("Nudge the selection", "Arrow keys · Shift+arrow for 10 px"),
+)

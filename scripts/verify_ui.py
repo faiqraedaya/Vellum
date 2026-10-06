@@ -15,11 +15,11 @@ from PySide6.QtWidgets import (
     QPushButton, QTableWidget, QWidget,
 )
 
-from pymeasure.core.constants import Tool
-from pymeasure.core.models import DiagramObject
-from pymeasure.gui import dialogs, icons
-from pymeasure.gui.theme import apply_theme, Tokens
-from pymeasure.gui.window import MainWindow
+from vellum.core.constants import Tool
+from vellum.core.models import DiagramObject
+from vellum.gui import dialogs, icons
+from vellum.gui.theme import apply_theme, Tokens
+from vellum.gui.window import MainWindow
 
 failures = []
 

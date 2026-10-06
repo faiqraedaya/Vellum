@@ -1,4 +1,4 @@
-from pymeasure.app import main
+from vellum.app import main
 
 if __name__ == "__main__":
     main()

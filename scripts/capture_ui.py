@@ -1,4 +1,4 @@
-"""Render every surface of PyMeasure to PNG so the design can be looked at.
+"""Render every surface of Vellum to PNG so the design can be looked at.
 
     python scripts/capture_ui.py [output directory]
 
@@ -14,11 +14,11 @@ from PySide6.QtCore import QPointF
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QApplication
 
-from pymeasure.core.constants import Tool
-from pymeasure.core.models import DiagramObject
-from pymeasure.gui.theme import apply_theme
-from pymeasure.gui.window import MainWindow
-from pymeasure.gui import dialogs
+from vellum.core.constants import Tool
+from vellum.core.models import DiagramObject
+from vellum.gui.theme import apply_theme
+from vellum.gui.window import MainWindow
+from vellum.gui import dialogs
 
 OUT = Path(sys.argv[1] if len(sys.argv) > 1 else "build/ui-shots")
 OUT.mkdir(parents=True, exist_ok=True)

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 import fitz  # PyMuPDF
 from PySide6.QtCore import Qt, QPointF, QRect, QRectF, QSize, Signal
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QFontMetrics, QImage, QPainter, QPalette, QPen,
+    QBrush, QColor, QFont, QFontInfo, QFontMetrics, QImage, QPainter, QPalette, QPen,
     QPixmap, QPolygonF,
 )
 from PySide6.QtWidgets import (
@@ -23,6 +23,7 @@ from .dialogs import (
     ScaleCoordsDialog, ScaleDistanceDialog, SetOriginDialog, TextBoxDialog,
 )
 from ..core.models import DiagramObject, Point, ScaleInfo
+from ..core.pdf_export import ExportStyle, PageMarkup
 from . import icons
 from .theme import Tokens as T
 
@@ -201,6 +202,7 @@ class DocumentTab:
     annotations live in `pages` (keyed by page index); everything here is shared
     across the document's pages (the open file, current view, PDF handle)."""
     file_path: str = ""
+    title: str = ""                     # a blank page's name; files use their own
     pixmap: Optional[QPixmap] = None
     pdf_doc: object = None              # fitz.Document or None
     pdf_page_index: int = 0
@@ -226,9 +228,9 @@ class DocumentTab:
         return self.page(self.pdf_page_index)
 
     def display_label(self) -> str:
-        if not self.file_path:
-            return "Untitled"
-        return os.path.basename(self.file_path)
+        if self.file_path:
+            return os.path.basename(self.file_path)
+        return self.title or "Untitled"
 
 
 # ---------------------------------------------------------------------------
@@ -500,6 +502,15 @@ class ImageViewer(QWidget):
     def current_tab_file_path(self) -> str:
         return self._active.file_path if self._active else ""
 
+    def current_tab_label(self) -> str:
+        return self._active.display_label() if self._active else ""
+
+    def current_tab_pdf_bytes(self) -> bytes:
+        """The active document as PDF bytes, for one with no file on disk."""
+        if self._active is None or self._active.pdf_doc is None:
+            return b""
+        return self._active.pdf_doc.tobytes()
+
     def current_tab_session_path(self) -> Optional[str]:
         return self._active.session_path if self._active else None
 
@@ -507,15 +518,15 @@ class ImageViewer(QWidget):
         if self._active is not None:
             self._active.session_path = path
 
-    def add_tab(self, file_path: str = "", activate: bool = True) -> int:
+    def add_tab(self, file_path: str = "", activate: bool = True, title: str = "") -> int:
         """Create a new (empty) tab and optionally make it active."""
-        tab = DocumentTab(file_path=file_path)
+        tab = DocumentTab(file_path=file_path, title=title)
         self._tabs.append(tab)
         idx = len(self._tabs) - 1
 
         self._suppress_tab_signal = True
         self._tab_bar.addTab(self._tab_label_for(tab))
-        self._tab_bar.setTabToolTip(idx, file_path or "Untitled")
+        self._tab_bar.setTabToolTip(idx, file_path or tab.display_label())
         self._tab_bar.setTabButton(idx, QTabBar.ButtonPosition.RightSide,
                                    self._make_close_button())
         self._tab_bar.show()
@@ -586,7 +597,7 @@ class ImageViewer(QWidget):
         if 0 <= idx < len(self._tabs):
             tab = self._tabs[idx]
             self._tab_bar.setTabText(idx, self._tab_label_for(tab))
-            self._tab_bar.setTabToolTip(idx, tab.file_path or "Untitled")
+            self._tab_bar.setTabToolTip(idx, tab.file_path or tab.display_label())
 
     def _tab_label_for(self, tab: DocumentTab) -> str:
         label = tab.display_label()
@@ -778,6 +789,21 @@ class ImageViewer(QWidget):
             self.close_tab(idx)
             return -1
         # Refresh the label (may now reflect PDF page count etc.)
+        self.refresh_tab_label(idx)
+        return idx
+
+    def open_blank_tab(self, doc, dpi: int, title: str) -> int:
+        """Open an in-memory PDF (a blank page) as a new, unsaved tab.
+        Returns the tab index, or -1 if the page could not be drawn."""
+        idx = self.add_tab(activate=True, title=title)
+        tab = self._tabs[idx]
+        tab.pdf_dpi = dpi
+        tab.pdf_doc = doc
+        tab.pdf_page_index = 0
+        if not self._render_pdf_page():
+            self.close_tab(idx)
+            return -1
+        self.fit_to_window()
         self.refresh_tab_label(idx)
         return idx
 
@@ -1151,16 +1177,7 @@ class ImageViewer(QWidget):
             # save/restore: the zoom-scaled font must not leak into whatever is
             # painted next (later object labels, the legend).
             painter.save()
-            font = QFont(painter.font())
-            if obj.font_family:
-                font.setFamily(obj.font_family)
-            size = obj.font_size if obj.font_size and obj.font_size > 0 else 12
-            # scale font with zoom so text tracks the box
-            font.setPointSizeF(max(1.0, size * self._zoom))
-            font.setBold(obj.bold)
-            font.setItalic(obj.italic)
-            font.setUnderline(obj.underline)
-            painter.setFont(font)
+            painter.setFont(self._textbox_font(obj, painter.font()))
             painter.setPen(QColor(obj.font_color) if obj.font_color else QColor(T.MARK_TEXTBOX))
             align = (_H_ALIGN.get(obj.h_align, Qt.AlignmentFlag.AlignLeft)
                      | _V_ALIGN.get(obj.v_align, Qt.AlignmentFlag.AlignTop))
@@ -1168,6 +1185,21 @@ class ImageViewer(QWidget):
                              int(align | Qt.TextFlag.TextWordWrap),
                              obj.text)
             painter.restore()
+
+    def _textbox_font(self, obj: DiagramObject, base: QFont) -> QFont:
+        """The text box's font at the current zoom. Its size is in points on
+        the page (as in a PDF editor), so it scales with the page: one page
+        point is dpi / 72 image pixels."""
+        font = QFont(base)
+        if obj.font_family:
+            font.setFamily(obj.font_family)
+        size = obj.font_size if obj.font_size and obj.font_size > 0 else 12
+        screen_px = size * self._pdf_dpi / 72.0 * self._zoom
+        font.setPointSizeF(max(1.0, screen_px * 72.0 / max(1, self.logicalDpiY())))
+        font.setBold(obj.bold)
+        font.setItalic(obj.italic)
+        font.setUnderline(obj.underline)
+        return font
 
     def _paint_contour_skeleton(self, painter, obj, selected):
         """Thin dashed defining geometry (polyline or single point) of a contour
@@ -1785,6 +1817,7 @@ class ImageViewer(QWidget):
             new_obj.points = [[x + off_x, y + off_y] for x, y in new_obj.points]
             new_obj.name = self._copy_name(new_obj.name)
             new_obj.timestamp = datetime.now().strftime("%H:%M:%S")
+            new_obj.renew_uid()
             self.objects.append(new_obj)
 
         self._selection = set(range(base, len(self.objects)))
@@ -1810,6 +1843,7 @@ class ImageViewer(QWidget):
             new_obj = deepcopy(obj)
             new_obj.name = self._copy_name(new_obj.name)
             new_obj.timestamp = datetime.now().strftime("%H:%M:%S")
+            new_obj.renew_uid()
             self.objects.append(new_obj)
 
         self._selection = set(range(base, len(self.objects)))
@@ -2259,15 +2293,7 @@ class ImageViewer(QWidget):
 
         ed = _InlineTextEditor(self)
         ed.setPlainText(obj.text)
-        font = QFont(ed.font())
-        if obj.font_family:
-            font.setFamily(obj.font_family)
-        size = obj.font_size if obj.font_size and obj.font_size > 0 else 12
-        font.setPointSizeF(max(1.0, size * self._zoom))
-        font.setBold(obj.bold)
-        font.setItalic(obj.italic)
-        font.setUnderline(obj.underline)
-        ed.setFont(font)
+        ed.setFont(self._textbox_font(obj, ed.font()))
         # The editor shows the box's own colours, so what is typed looks like
         # what will be drawn. Set through the palette rather than a stylesheet:
         # theme.py is the only place in the app that calls setStyleSheet.
@@ -2892,6 +2918,39 @@ class ImageViewer(QWidget):
             "pan":          [tab.pan.x(), tab.pan.y()],
             "pages":        pages,
         }
+
+    def export_pages(self) -> List[PageMarkup]:
+        """The active document's markup, one entry per page that holds any,
+        for writing into a PDF. An open inline text edit is committed first."""
+        self._finish_inline_edit()
+        tab = self._active
+        if tab is None:
+            return []
+        return [
+            PageMarkup(idx, list(ps.objects), ps.scale_info, ps.origin,
+                       tuple(ps.origin_world), ps.legend_title, ps.legend_visible)
+            for idx, ps in sorted(tab.pages.items())
+            if self._page_state_has_data(ps)
+        ]
+
+    def current_tab_dpi(self) -> int:
+        """Image pixels per inch of the active page: the PDF render resolution,
+        and the resolution an image is laid onto a PDF page at."""
+        return self._pdf_dpi
+
+    def export_style(self) -> ExportStyle:
+        """The theme colours and label font the canvas draws with."""
+        return ExportStyle(
+            kind_colors={k: c.name() for k, c in _KIND_COLOR.items()},
+            contour_color=T.contour(0),
+            guide_color=_SKELETON_COLOR.name(),
+            text_color=T.MARK_TEXTBOX,
+            label_family=self.font().family(),
+            label_px=float(QFontInfo(self.font()).pixelSize()),
+            legend_ink=T.INK,
+            legend_bg=T.CANVAS,
+            legend_border=T.ink_hex(T.SURFACE_BORDER_STRONG),
+        )
 
     def _recompute_missing_measures_for(self, ps: PageState):
         """Backfill derived measurements for a page's objects that lack them

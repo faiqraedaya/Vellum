@@ -5,16 +5,22 @@ from PySide6.QtCore import Qt, QPointF, QSettings, QSize, Slot
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QLabel, QMainWindow, QMenu, QMessageBox,
-    QListWidgetItem, QProgressBar, QSizePolicy, QToolBar, QWidget,
+    QListWidgetItem, QProgressBar, QSizePolicy, QStackedWidget, QToolBar, QWidget,
 )
 
+from ..core import pages
 from ..core.constants import Tool, TOOL_HELP, TOOL_LABELS, TOOL_SHORTCUTS
 from . import icons
 from . import layout as ly
+from .commands import CommandsDialog
 from .dialogs import ExportDialog
+from .home import HomePage
+from .new_page import NewPageDialog
+from ..core.fonts import FontResolver
 from ..core.models import DiagramObject, Point, ScaleInfo
+from ..core.pdf_export import export_pdf
 from .panel import RightPanel
-from .theme import Tokens as T
+from .theme import FONTS_DIR, Tokens as T
 from .viewer import ImageViewer
 
 
@@ -28,7 +34,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PyMeasure")
+        self.setWindowTitle("Vellum")
         self.setMinimumSize(self.MIN_WIDTH, self.MIN_HEIGHT)
         self.resize(1400, 860)
 
@@ -44,11 +50,24 @@ class MainWindow(QMainWindow):
         splitter = ly.splitter(self.viewer, panel_holder,
                                sizes=[1060, 340], stretch=[1, 0])
 
+        # The home page stands in for the workspace whenever no document is
+        # open, so an empty window always offers a way to start.
+        self.home = HomePage()
+        self.home.new_requested.connect(self.new_document)
+        self.home.open_requested.connect(self.open_file)
+        self.home.help_requested.connect(self.show_commands)
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self.home)
+        self._stack.addWidget(splitter)
+        self._workspace = splitter
+
         central = QWidget()
         central.setObjectName("centralWidget")
         central_layout = ly.hbox(central, margin=0)
-        central_layout.addWidget(splitter)
+        central_layout.addWidget(self._stack)
         self.setCentralWidget(central)
+        self._commands_dialog = None
+        self._untitled_count = 0
 
         self._build_menus()
         self._build_toolbar()
@@ -59,7 +78,7 @@ class MainWindow(QMainWindow):
         self._syncing_selection = False
         self._last_open_dir = ""
 
-        settings = QSettings("PyMeasure", "PyMeasure")
+        settings = QSettings("Vellum", "Vellum")
         self._recent_files: list[str] = settings.value("recentFiles", [])
         if isinstance(self._recent_files, str):
             self._recent_files = [self._recent_files]
@@ -91,7 +110,7 @@ class MainWindow(QMainWindow):
 
         # File
         file_menu = mb.addMenu("&File")
-        self._add_action(file_menu, "&New",            "Ctrl+N",        self.new_document)
+        self._add_action(file_menu, "&New page…",     "Ctrl+N",        self.new_document)
         self._add_action(file_menu, "&Open…",         "Ctrl+O",        self.open_file)
         self._recent_menu = file_menu.addMenu("Open &recent")
         file_menu.addSeparator()
@@ -101,6 +120,7 @@ class MainWindow(QMainWindow):
         self._recent_session_menu = file_menu.addMenu("Load &recent session")
         file_menu.addSeparator()
         self._add_action(file_menu, "&Export data…",  "Ctrl+E",        self.show_export)
+        self._add_action(file_menu, "Export as &PDF with markups…", "Ctrl+Shift+P", self.export_markup_pdf)
         self._add_action(file_menu, "Export &view as image…", "Ctrl+Shift+E", self.export_view_image)
         self._add_action(file_menu, "Snapshot view to &clipboard", "Ctrl+Shift+C", self.snapshot_view_to_clipboard)
         file_menu.addSeparator()
@@ -161,6 +181,8 @@ class MainWindow(QMainWindow):
 
         # Help
         help_menu = mb.addMenu("&Help")
+        self._add_action(help_menu, "&Commands…", "F1", self.show_commands)
+        help_menu.addSeparator()
         self._add_action(help_menu, "&About", None, self.show_about)
 
     def _add_action(self, menu, label: str, shortcut, slot):
@@ -187,7 +209,7 @@ class MainWindow(QMainWindow):
         # shortcut, and every one has a labelled twin in the menus - the glyph
         # is never the only thing saying what a button does.
         new_act = tb.addAction(icons.action_icon("new"), "New")
-        new_act.setToolTip("New — unload the current drawing  (Ctrl+N)")
+        new_act.setToolTip("New blank page  (Ctrl+N)")
         new_act.triggered.connect(self.new_document)
         open_act = tb.addAction(icons.action_icon("open"), "Open")
         open_act.setToolTip("Open image or PDF  (Ctrl+O)")
@@ -287,7 +309,7 @@ class MainWindow(QMainWindow):
             return
         reply = QMessageBox.question(
             self, "Open associated session",
-            f"PyMeasure last opened this file with the session:\n\n"
+            f"Vellum last opened this file with the session:\n\n"
             f"{session_path}\n\n"
             "Open that session too?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -297,7 +319,7 @@ class MainWindow(QMainWindow):
             self._do_load_session(session_path)
 
     def _save_recents(self):
-        QSettings("PyMeasure", "PyMeasure").setValue("recentFiles", self._recent_files)
+        QSettings("Vellum", "Vellum").setValue("recentFiles", self._recent_files)
 
     def _update_recent_session_menu(self):
         self._recent_session_menu.clear()
@@ -366,7 +388,7 @@ class MainWindow(QMainWindow):
         self._update_recent_session_menu()
 
     def _save_recent_sessions(self):
-        QSettings("PyMeasure", "PyMeasure").setValue("recentSessions", self._recent_sessions)
+        QSettings("Vellum", "Vellum").setValue("recentSessions", self._recent_sessions)
 
     # ------------------------------------------------------------------
     # File ↔ session association memory
@@ -380,7 +402,7 @@ class MainWindow(QMainWindow):
         self._save_file_session_map()
 
     def _save_file_session_map(self):
-        QSettings("PyMeasure", "PyMeasure").setValue(
+        QSettings("Vellum", "Vellum").setValue(
             "fileSessionMap", json.dumps(self._file_session_map),
         )
 
@@ -412,8 +434,11 @@ class MainWindow(QMainWindow):
         to reflect the current tab — call after a tab switch or session load."""
         self._rebuild_objects_list()
 
-        if self.viewer.current_tab_index < 0:
-            self.setWindowTitle("PyMeasure")
+        has_document = self.viewer.current_tab_index >= 0
+        self._stack.setCurrentWidget(self._workspace if has_document else self.home)
+
+        if not has_document:
+            self.setWindowTitle("Vellum")
             self._status_scale.setText("Scale: 1 px = 1 px")
             self._status_origin.setText("Origin: (0, 0)")
             self._status_zoom.setText("100%")
@@ -421,8 +446,7 @@ class MainWindow(QMainWindow):
             self._update_pdf_nav()
             return
 
-        tab_path = self.viewer.current_tab_file_path() or "Untitled"
-        self.setWindowTitle(f"PyMeasure — {os.path.basename(tab_path)}")
+        self.setWindowTitle(f"Vellum — {self.viewer.current_tab_label()}")
 
         si = self.viewer.scale_info
         self._status_scale.setText(f"Scale: 1 px = {si.scale_factor:.6g} {si.unit}")
@@ -731,22 +755,19 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def new_document(self):
-        """Unload the current drawing + session (fresh start)."""
-        idx = self.viewer.current_tab_index
-        if idx < 0:
+        """Ask for a page size, then open a blank page of it in a new tab."""
+        name = f"Untitled {self._untitled_count + 1}"
+        dlg = NewPageDialog(name, self)
+        if dlg.exec() != NewPageDialog.DialogCode.Accepted:
             return
-        if self.viewer.tab_has_session_state(idx):
-            reply = QMessageBox.question(
-                self, "New",
-                "Start a new document?\n\nThe current drawing and its measurements "
-                "will be unloaded. Save the session first if you want to keep them.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Cancel,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-        self.viewer.close_tab(idx)
+        w_px, h_px = dlg.pixel_size()
+        doc = pages.blank_pdf(w_px, h_px, dlg.dpi())
+        if self.viewer.open_blank_tab(doc, dlg.dpi(), dlg.page_name()) < 0:
+            QMessageBox.warning(self, "New page", "Could not create the blank page.")
+            return
+        self._untitled_count += 1
         self._refresh_ui_for_active_tab()
+        self.set_status(f"New page: {w_px:,} × {h_px:,} px at {dlg.dpi()} px/in")
 
     def open_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -839,6 +860,68 @@ class MainWindow(QMainWindow):
             return
         self.set_status(f"View exported to {path}")
 
+    def _font_resolver(self) -> FontResolver:
+        """Installed fonts plus the bundled Inter, under the family name the
+        canvas draws labels with. Built once: reading the font registry is
+        not free."""
+        if getattr(self, "_fonts", None) is None:
+            self._fonts = FontResolver()
+            for path in FONTS_DIR.glob("*.ttf"):
+                self._fonts.register(T.FONT_FAMILY, str(path),
+                                     italic="italic" in path.stem.lower())
+        return self._fonts
+
+    def export_markup_pdf(self):
+        """Write the document with its markups as native PDF annotations that
+        Bluebeam, Acrobat and other editors can edit. An image is placed on a
+        PDF page first."""
+        if self.viewer.current_tab_index < 0:
+            QMessageBox.information(self, "Export PDF", "Open an image or PDF first.")
+            return
+        source = self.viewer.current_tab_file_path()
+        if source:
+            if not os.path.isfile(source):
+                QMessageBox.information(self, "Export PDF", "The document's file is no longer on disk.")
+                return
+            base = os.path.splitext(os.path.basename(source))[0]
+            start_dir = os.path.dirname(source)
+        else:
+            # A blank page lives only in memory; export it from its own bytes.
+            source = self.viewer.current_tab_pdf_bytes()
+            base = self.viewer.current_tab_label()
+            start_dir = self._last_open_dir
+        markup = self.viewer.export_pages()
+        start = os.path.join(start_dir, f"{base} - markups.pdf")
+        path, _ = QFileDialog.getSaveFileName(self, "Export as PDF with markups", start,
+                                              "PDF Files (*.pdf)")
+        if not path:
+            return
+        if not path.lower().endswith(".pdf"):
+            path += ".pdf"
+        if isinstance(source, str) and \
+                os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(source)):
+            QMessageBox.warning(self, "Export PDF",
+                                "Choose a different file: the open document can't be overwritten.")
+            return
+        self.set_busy(True, "Exporting PDF…")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        report = error = None
+        try:
+            report = export_pdf(source, path, markup, self.viewer.current_tab_dpi(),
+                                self.viewer.export_style(), self._font_resolver())
+        except Exception as e:
+            error = e
+        finally:
+            QApplication.restoreOverrideCursor()
+        if error is not None:
+            self.set_busy(False, "Export failed")
+            QMessageBox.critical(self, "Export PDF", f"Could not export to:\n{path}\n\n{error}")
+            return
+        n = report.annotations
+        self.set_busy(False, f"Exported {n} markup{'s' if n != 1 else ''} to {path}")
+        if report.warnings:
+            QMessageBox.warning(self, "Export PDF", "\n".join(report.warnings))
+
     def snapshot_view_to_clipboard(self):
         if self.viewer.current_tab_index < 0:
             QMessageBox.information(self, "Snapshot view", "Open an image or PDF first.")
@@ -850,12 +933,23 @@ class MainWindow(QMainWindow):
         QApplication.clipboard().setPixmap(pixmap)
         self.set_status("View copied to clipboard")
 
+    def show_commands(self):
+        """Every command and its shortcut, in one non-modal window."""
+        if self._commands_dialog is None:
+            self._commands_dialog = CommandsDialog(self.menuBar(), self)
+        self._commands_dialog.show()
+        self._commands_dialog.raise_()
+        self._commands_dialog.activateWindow()
+
     def show_about(self):
         QMessageBox.about(
-            self, "About PyMeasure",
-            "<b>PyMeasure v2.0</b><br><br>"
+            self, "About Vellum",
+            "<b>Vellum v2.0</b><br>"
+            "Mark up images and PDFs: measurements, annotations and "
+            "contours, to scale.<br><br>"
             "Features:<br>"
             "• Open images (PNG, JPEG, BMP, TIFF) and multi-page PDFs<br>"
+            "• Start from a blank page: paper and screen presets, or any size and resolution<br>"
             "• Pan and zoom · middle-click or scroll · Zoom rectangle (Z)<br>"
             "• Set origin and scale (by distance or coordinates)<br>"
             "• Add labelled points, lines, angles, polygons, polylines, ellipses, text<br>"
@@ -867,7 +961,8 @@ class MainWindow(QMainWindow):
             "• Right-click a vertex to delete it · right-click an edge to insert<br>"
             "• Shift-lock to cardinal directions while measuring<br>"
             "• Double-click to finish polygon or polyline<br>"
-            "• Undo and redo · save and load sessions · export CSV/JSON<br><br>"
+            "• Undo and redo · save and load sessions · export CSV/JSON<br>"
+            "• Export as PDF with native, editable markups<br><br>"
             "Built with PySide6 and PyMuPDF.",
         )
 

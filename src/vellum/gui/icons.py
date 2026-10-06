@@ -15,6 +15,9 @@ labelled twin in the Tools menu.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -114,6 +117,10 @@ _GLYPHS = {
     "download": (
         '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'
         '<path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>'
+    ),
+    "help": (
+        '<circle cx="12" cy="12" r="10"/>'
+        '<path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
     ),
     "close": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     "chevron-down": '<path d="m6 9 6 6 6-6"/>',
@@ -234,6 +241,35 @@ _KIND_GLYPH = {
     "polyline_contour": "path-offset",
     "point_contour": "target",
 }
+
+
+def _app_icon_path() -> Path:
+    beside_module = Path(__file__).parent / "vellum.svg"
+    if beside_module.is_file():
+        return beside_module
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        return Path(bundle_root) / "vellum" / "gui" / "vellum.svg"
+    return beside_module
+
+
+def app_icon() -> QIcon:
+    """The application icon, the one asset that keeps its own colours.
+
+    Rendered to a pixmap per size rather than handed to QIcon as a file, so
+    it does not depend on Qt's SVG icon-engine plugin being in the bundle.
+    """
+    renderer = QSvgRenderer(str(_app_icon_path()))
+    result = QIcon()
+    for size in (16, 24, 32, 48, 64, 128, 256):
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        renderer.render(painter, QRectF(0, 0, size, size))
+        painter.end()
+        result.addPixmap(pixmap)
+    return result
 
 
 def kind_icon(kind: str) -> QIcon:

@@ -27,12 +27,12 @@ if errorlevel 1 (
 )
 
 echo [4/4] Build complete.
-set "EXE=%~dp0dist\PyMeasure\PyMeasure.exe"
+set "EXE=%~dp0dist\Vellum\Vellum.exe"
 if not exist "%EXE%" (
     echo [ERROR] Expected exe not found at "%EXE%".
     exit /b 1
 )
 echo Output: %EXE%
-powershell -NoProfile -Command "$s = (Get-ChildItem -Recurse '%~dp0dist\PyMeasure' | Measure-Object -Property Length -Sum).Sum; Write-Host ('Bundle size: {0:N1} MB' -f ($s/1MB))"
+powershell -NoProfile -Command "$s = (Get-ChildItem -Recurse '%~dp0dist\Vellum' | Measure-Object -Property Length -Sum).Sum; Write-Host ('Bundle size: {0:N1} MB' -f ($s/1MB))"
 
 endlocal
